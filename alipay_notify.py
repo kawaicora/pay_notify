@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SpyMoneyAlipayPlayer - 间谍偷钱支付宝语音播报
+AlipayNotify - 支付宝到账语音播报
 TCP server: 127.0.0.1:39247
 Protocol: SPY_MONEY_EVENT {"amount":N,"direction":"gain"/"lose","frame":N}
 """
@@ -190,7 +190,7 @@ def handle_event(data: str):
 
 def handle_client(conn: socket.socket, addr):
     """Handle a client connection."""
-    print(f"[server] 游戏已连接 from {addr}", flush=True)
+    print(f"[server] 客户端已连接 from {addr}", flush=True)
     try:
         buffer = ""
         while True:
@@ -212,9 +212,9 @@ def handle_client(conn: socket.socket, addr):
 
 def main():
     print("=" * 50)
-    print("间谍偷钱支付宝语音 — 监听中")
+    print("支付宝到账语音播报 — 监听中")
     print(f"程序目录: {BASE_DIR}")
-    print("请先保持本窗口打开，再启动尤里复仇。关闭窗口即停止。")
+    print("保持窗口打开即可接收到账通知。关闭窗口即停止。")
     print("=" * 50)
 
     # Initialize pygame if available
