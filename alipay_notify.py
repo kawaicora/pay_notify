@@ -73,9 +73,9 @@ def play_audio(name: str):
 
 def amount_to_clips(amount) -> list:
     """Convert amount to list of audio clip names.
-    Example: 1241182 -> ['tts_1','tts_hundred','tts_2','tts_ten','tts_4',
-                          'tts_ten_thousand','tts_1','tts_thousand','tts_1',
-                          'tts_hundred','tts_8','tts_ten','tts_2']
+    Example: 1241182 -> ['tts_1','tts_bai','tts_2','tts_ten','tts_4',
+                          'tts_wan','tts_1','tts_qian','tts_1',
+                          'tts_bai','tts_8','tts_ten','tts_2']
     Supports float amounts for jiao/fen (角/分).
     """
     if amount <= 0:
@@ -93,14 +93,14 @@ def amount_to_clips(amount) -> list:
             yi = int_part // 100000000
             rest_after_yi = int_part % 100000000
             clips.extend(number_to_clips(yi))
-            clips.append("tts_ten_million")  # 亿
+            clips.append("tts_yi")  # 亿
             if rest_after_yi > 0:
                 # Handle 万 (10,000)
                 if rest_after_yi >= 10000:
                     wan = rest_after_yi // 10000
                     rest = rest_after_yi % 10000
                     clips.extend(number_to_clips(wan))
-                    clips.append("tts_ten_thousand")
+                    clips.append("tts_wan")
                     if rest > 0:
                         clips.extend(number_to_clips(rest))
                 else:
@@ -110,7 +110,7 @@ def amount_to_clips(amount) -> list:
             wan = int_part // 10000
             rest = int_part % 10000
             clips.extend(number_to_clips(wan))
-            clips.append("tts_ten_thousand")
+            clips.append("tts_wan")
             if rest > 0:
                 clips.extend(number_to_clips(rest))
         else:
@@ -135,13 +135,13 @@ def number_to_clips(n: int) -> list:
     if n >= 1000:
         thousand = n // 1000
         clips.append(f"tts_{thousand}")
-        clips.append("tts_thousand")
+        clips.append("tts_qian")
         n = n % 1000
 
     if n >= 100:
         hundred = n // 100
         clips.append(f"tts_{hundred}")
-        clips.append("tts_hundred")
+        clips.append("tts_bai")
         n = n % 100
 
     if n >= 10:
@@ -149,7 +149,7 @@ def number_to_clips(n: int) -> list:
         clips.append(f"tts_{ten}")
         clips.append("tts_ten")
         n = n % 10
-    elif n > 0 and (clips and not clips[-1] in ("tts_hundred", "tts_thousand", "tts_ten_thousand")):
+    elif n > 0 and (clips and not clips[-1] in ("tts_bai", "tts_qian", "tts_wan")):
         # Only add zero if we're in the middle of a number
         pass
 
@@ -169,16 +169,25 @@ def handle_event(data: str):
         event = json.loads(json_str)
         amount = event.get("amount", 0)
         direction = event.get("direction", "gain")
-
+        pay_method = event.get("pay_method", "alipay")
+        if pay_method != "alipay" and pay_method != "wechat":   #支持微信 支付宝播报
+            print(f"[WARN] Unsupported pay method: {pay_method}")
+            return
         if amount <= 0:
             return
-
+        if direction == "lost":
+            clips = ["ding",f"tts_{pay_method}_pay"]
+            clips.extend(amount_to_clips(amount))
+            clips.append("tts_yuan")
+            print(f"[player] 播放支付 {amount} ({len(clips)} 段)")
+            return
+        elif direction == "gain":
         # Build clip list
-        clips = ["tts_success"]
-        clips.extend(amount_to_clips(amount))
-        clips.append("tts_yuan")
+            clips = ["ding",f"tts_{pay_method}_received"]
+            clips.extend(amount_to_clips(amount))
+            clips.append("tts_yuan")
 
-        print(f"[player] 播放到账 {amount} ({len(clips)} 段)")
+            print(f"[player] 播放到账 {amount} ({len(clips)} 段)")
 
         # Play all clips synchronously
         for clip in clips:
