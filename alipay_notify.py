@@ -10,21 +10,15 @@ import json
 import os
 import sys
 import time
+import wave
 from pathlib import Path
 
-# Try to use winsound for WAV playback on Windows
+# Try to use pyaudio for WAV playback
 try:
-    import winsound
-    HAS_WINSOUND = True
+    import pyaudio
+    HAS_PYAUDIO = True
 except ImportError:
-    HAS_WINSOUND = False
-
-# Try to use pygame for MP3 playback
-try:
-    import pygame
-    HAS_PYGAME = True
-except ImportError:
-    HAS_PYGAME = False
+    HAS_PYAUDIO = False
 
 HOST = "127.0.0.1"
 PORT = 39247
@@ -42,6 +36,11 @@ else:
     BASE_DIR = Path(__file__).parent
     AUDIO_DIR = BASE_DIR / "audio"
 
+# Initialize PyAudio
+_pyaudio = None
+if HAS_PYAUDIO:
+    _pyaudio = pyaudio.PyAudio()
+
 
 def get_audio_path(name: str) -> Path:
     """Get audio file path, prefer WAV over MP3."""
@@ -52,22 +51,43 @@ def get_audio_path(name: str) -> Path:
 
 
 def play_audio(name: str):
-    """Play an audio file and wait until finished."""
+    """Play an audio file and wait until finished using PyAudio."""
     path = get_audio_path(name)
     if not path.exists():
         print(f"[WARN] Audio not found: {path}")
         return
 
-    if HAS_WINSOUND and path.suffix.lower() == ".wav":
-        # winsound.PlaySound: SND_FILENAME | SND_SYNC plays synchronously
-        winsound.PlaySound(str(path), 0x00020000 | 0x0000)
-    elif HAS_PYGAME:
-        pygame.mixer.music.load(str(path))
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            time.sleep(0.1)
-    else:
+    if not HAS_PYAUDIO:
         print(f"[WARN] No audio backend available, would play: {path}")
+        time.sleep(0.5)
+        return
+
+    try:
+        # Open WAV file
+        wf = wave.open(str(path), 'rb')
+
+        # Create PyAudio stream
+        stream = _pyaudio.open(
+            format=_pyaudio.get_format_from_width(wf.getsampwidth()),
+            channels=wf.getnchannels(),
+            rate=wf.getframerate(),
+            output=True
+        )
+
+        # Read and play audio data
+        chunk = 1024
+        data = wf.readframes(chunk)
+        while data:
+            stream.write(data)
+            data = wf.readframes(chunk)
+
+        # Cleanup
+        stream.stop_stream()
+        stream.close()
+        wf.close()
+
+    except Exception as e:
+        print(f"[ERROR] Failed to play {path}: {e}")
         time.sleep(0.5)
 
 
@@ -170,24 +190,25 @@ def handle_event(data: str):
         amount = event.get("amount", 0)
         direction = event.get("direction", "gain")
         pay_method = event.get("pay_method", "alipay")
+        frame = event.get("frame", 0)
         if pay_method != "alipay" and pay_method != "wechat":   #支持微信 支付宝播报
             print(f"[WARN] Unsupported pay method: {pay_method}")
             return
         if amount <= 0:
             return
-        if direction == "lost":
+        if direction == "lose":
             clips = ["ding",f"tts_{pay_method}_pay"]
             clips.extend(amount_to_clips(amount))
             clips.append("tts_yuan")
-            print(f"[player] 播放支付 {amount} ({len(clips)} 段)")
-            return
+            print(f"[player] 播放支付 {amount} ({len(clips)} 段) from frame {frame}")
+
         elif direction == "gain":
         # Build clip list
             clips = ["ding",f"tts_{pay_method}_received"]
             clips.extend(amount_to_clips(amount))
             clips.append("tts_yuan")
 
-            print(f"[player] 播放到账 {amount} ({len(clips)} 段)")
+            print(f"[player] 播放到账 {amount} ({len(clips)} 段) from frame {frame}")
 
         # Play all clips synchronously
         for clip in clips:
@@ -226,10 +247,6 @@ def main():
     print("保持窗口打开即可接收到账通知。关闭窗口即停止。")
     print("=" * 50)
 
-    # Initialize pygame if available
-    if HAS_PYGAME:
-        pygame.mixer.init()
-
     # Start TCP server
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -246,7 +263,14 @@ def main():
         print("\nStopped by user.")
     finally:
         server.close()
+        if _pyaudio:
+            _pyaudio.terminate()
 
+def test_amount_to_clips():
+    handle_event('SPY_MONEY_EVENT {"amount":1241182,"direction":"gain","frame":0,"pay_method":"alipay"}')
+    handle_event('SPY_MONEY_EVENT {"amount":1241182,"direction":"gain","frame":0,"pay_method":"wechat"}')
+    handle_event('SPY_MONEY_EVENT {"amount":1241182,"direction":"lose","frame":0,"pay_method":"alipay"}')
+    handle_event('SPY_MONEY_EVENT {"amount":1241182,"direction":"lose","frame":0,"pay_method":"wechat"}')
 
 if __name__ == "__main__":
     main()
